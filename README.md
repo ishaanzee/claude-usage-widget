@@ -2,6 +2,13 @@
 
 An iOS [Scriptable](https://scriptable.app) widget that shows your Claude session (5h) and weekly usage limits on your home or lock screen.
 
+## Screenshots
+| Small | Medium | Lock screen |
+| --- | --- | --- |
+| <img src="docs/small.png" width="180"> | <img src="docs/medium.png" width="380"> | <img src="docs/lock-screen.png" width="260"> |
+
+*Medium is a real screenshot; small and lock screen are renders of the same layout.*
+
 ## How it works
 - A SwiftBar plugin on your Mac (`~/.swiftbar/claude-usage.5m.sh`) writes `claude-usage.json` to `iCloud Drive/Claude Usage` every 5 minutes.
 - The widget reads that file via iCloud and renders usage bars, reset times, and per-model weekly limits.
