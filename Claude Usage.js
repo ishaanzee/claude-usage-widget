@@ -5,8 +5,10 @@
 // Setup: Scriptable Settings → File Bookmarks → + → Pick Folder → iCloud Drive/Claude Usage,
 // and name the bookmark "Claude Usage".
 // Supports small and medium home-screen widgets plus lock-screen widgets.
+// The last good reading is cached on the phone, so the widget still shows data when iCloud or the Mac is unavailable.
 
 const FILE = "claude-usage.json"
+const CACHE_FILE = "claude-usage-cache.json"
 const BOOKMARK = "Claude Usage"
 const STALE_MIN = 30
 
@@ -21,13 +23,28 @@ const TRACK = new Color("#8e8e93", 0.3)
 const colorFor = p => (p >= 90 ? RED : p >= 70 ? AMBER : ACCENT)
 const pctColor = p => (p >= 70 ? colorFor(p) : FG)
 
+// Returns the freshest data available: iCloud file first, then the on-device cache.
 async function load() {
-  const fm = FileManager.iCloud()
-  if (!fm.bookmarkExists(BOOKMARK)) throw new Error(`Add a file bookmark named "${BOOKMARK}" in Scriptable settings.`)
-  const path = fm.joinPath(fm.bookmarkedPath(BOOKMARK), FILE)
-  if (!fm.fileExists(path)) return null
-  await fm.downloadFileFromiCloud(path)
-  return JSON.parse(fm.readString(path))
+  const local = FileManager.local()
+  const cachePath = local.joinPath(local.documentsDirectory(), CACHE_FILE)
+  let err = null
+  try {
+    const fm = FileManager.iCloud()
+    if (!fm.bookmarkExists(BOOKMARK)) throw new Error(`Add a file bookmark named "${BOOKMARK}" in Scriptable settings.`)
+    const path = fm.joinPath(fm.bookmarkedPath(BOOKMARK), FILE)
+    if (fm.fileExists(path)) {
+      await fm.downloadFileFromiCloud(path)
+      const raw = fm.readString(path)
+      const data = JSON.parse(raw)
+      local.writeString(cachePath, raw)
+      return data
+    }
+  } catch (e) {
+    err = e
+  }
+  if (local.fileExists(cachePath)) return JSON.parse(local.readString(cachePath))
+  if (err) throw err
+  return null
 }
 
 const norm = l => ({
@@ -55,6 +72,17 @@ function fmtReset(d, withDay) {
   if (!d) return ""
   const t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
   return withDay ? `${d.toLocaleDateString([], { weekday: "short" })} ${t}` : t
+}
+
+// A reset time in the past means the shown percent is outdated
+const resetText = (lim, withDay) =>
+  !lim.reset ? " " : lim.reset.getTime() <= Date.now() ? "reset — awaiting update" : `resets ${fmtReset(lim.reset, withDay)}`
+
+const isStale = at => !at || Date.now() - at.getTime() > STALE_MIN * 60e3
+
+function fmtUpdated(at) {
+  const t = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+  return at.toDateString() === new Date().toDateString() ? t : `${at.toLocaleDateString([], { weekday: "short" })} ${t}`
 }
 
 function bar(p, w, h) {
@@ -92,18 +120,11 @@ function addBar(parent, p, w) {
   img.imageSize = new Size(w, 6)
 }
 
-// "updated 12 min ago" — the relative date ticks on its own without a widget refresh
+// Static "Updated 3:45 PM"; turns amber with a warning when the data is stale
 function addUpdated(parent, at) {
-  const s = parent.addStack()
-  if (!at) return addText(s, "never updated", Font.systemFont(10), AMBER)
-  const stale = Date.now() - at.getTime() > STALE_MIN * 60e3
-  const color = stale ? AMBER : DIM
-  addText(s, stale ? "⚠ updated " : "updated ", Font.systemFont(10), color)
-  const d = s.addDate(at)
-  d.applyRelativeStyle()
-  d.font = Font.systemFont(10)
-  d.textColor = color
-  addText(s, " ago", Font.systemFont(10), color)
+  if (!at) return addText(parent, "never updated", Font.systemFont(10), AMBER)
+  const stale = isStale(at)
+  return addText(parent, `${stale ? "⚠ " : ""}Updated ${fmtUpdated(at)}`, Font.systemFont(10), stale ? AMBER : DIM)
 }
 
 // Big-number block for the medium widget
@@ -115,7 +136,7 @@ function block(parent, label, lim, withDay) {
   s.addSpacer(4)
   addBar(s, lim.percent, 130)
   s.addSpacer(4)
-  addText(s, lim.reset ? `resets ${fmtReset(lim.reset, withDay)}` : " ", Font.systemFont(10), DIM)
+  addText(s, resetText(lim, withDay), Font.systemFont(10), DIM)
 }
 
 // Compact row for the small widget
@@ -128,7 +149,7 @@ function row(parent, label, lim, withDay) {
   parent.addSpacer(2)
   addBar(parent, lim.percent, 125)
   parent.addSpacer(2)
-  if (lim.reset) addText(parent, `resets ${fmtReset(lim.reset, withDay)}`, Font.systemFont(9), DIM)
+  addText(parent, resetText(lim, withDay), Font.systemFont(9), DIM)
 }
 
 function homeWidget(u, family) {
@@ -175,6 +196,7 @@ function lockWidget(u, family) {
     addText(w, "✳ Claude", Font.semiboldSystemFont(12), Color.white())
     addText(w, `Session ${u.session.percent}% · ${fmtReset(u.session.reset, false)}`, Font.systemFont(12), Color.white())
     addText(w, `Weekly ${u.weekly.percent}% · ${fmtReset(u.weekly.reset, true)}`, Font.systemFont(12), Color.white())
+    if (u.fetchedAt) addText(w, `${isStale(u.fetchedAt) ? "⚠ " : ""}Updated ${fmtUpdated(u.fetchedAt)}`, Font.systemFont(10), Color.white())
   }
   return w
 }
@@ -196,7 +218,7 @@ try {
   const data = await load()
   widget = data
     ? (family.startsWith("accessory") ? lockWidget : homeWidget)(parse(data), family)
-    : errorWidget("No usage data yet. Make sure SwiftBar is running on your Mac.")
+    : errorWidget("No usage data yet. Make sure SwiftBar is running on your Mac. Once it has run once, the last reading is remembered.")
 } catch (e) {
   widget = errorWidget(`Couldn't read usage: ${e.message}`)
 }

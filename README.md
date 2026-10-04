@@ -14,5 +14,7 @@ An iOS [Scriptable](https://scriptable.app) widget that shows your Claude sessio
 ## Features
 - Small, medium, and lock-screen (inline, circular, rectangular) sizes
 - Bars turn amber at 70% and red at 90%
-- Stale-data warning if the Mac hasn't updated in 30 minutes
+- Remembers the last reading on-device, so it never goes blank if iCloud or the Mac is offline
+- Static "Updated 3:45 PM" label, with an amber warning if data is over 30 minutes old
+- Flags outdated percentages once a reset time has passed
 - Tap to open claude.ai usage settings
