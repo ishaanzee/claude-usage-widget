@@ -47,10 +47,12 @@ async function load() {
   return null
 }
 
-const norm = l => ({
-  percent: Math.floor(l?.percent ?? 0),
-  reset: l?.resets_at ? new Date(l.resets_at) : null,
-})
+// Once a reset time has passed, the old percent no longer applies, so show 0% until the next update
+const passed = d => d && d.getTime() <= Date.now()
+const norm = l => {
+  const reset = l?.resets_at ? new Date(l.resets_at) : null
+  return { percent: passed(reset) ? 0 : Math.floor(l?.percent ?? 0), reset: passed(reset) ? null : reset }
+}
 
 function parse(data) {
   const ls = data.limits || []
@@ -59,7 +61,7 @@ function parse(data) {
   const weekly = pick("weekly_all") || { percent: data.seven_day?.utilization, resets_at: data.seven_day?.resets_at }
   const scoped = ls
     .filter(l => l.kind === "weekly_scoped" && l.scope?.model?.display_name)
-    .map(l => `${l.scope.model.display_name} ${Math.floor(l.percent ?? 0)}%`)
+    .map(l => `${l.scope.model.display_name} ${norm(l).percent}%`)
   return {
     session: norm(session),
     weekly: norm(weekly),
@@ -74,9 +76,7 @@ function fmtReset(d, withDay) {
   return withDay ? `${d.toLocaleDateString([], { weekday: "short" })} ${t}` : t
 }
 
-// A reset time in the past means the shown percent is outdated
-const resetText = (lim, withDay) =>
-  !lim.reset ? " " : lim.reset.getTime() <= Date.now() ? "reset — awaiting update" : `resets ${fmtReset(lim.reset, withDay)}`
+const resetText = (lim, withDay) => (lim.reset ? `resets ${fmtReset(lim.reset, withDay)}` : " ")
 
 const isStale = at => !at || Date.now() - at.getTime() > STALE_MIN * 60e3
 
@@ -194,8 +194,8 @@ function lockWidget(u, family) {
     addText(w, `wk ${u.weekly.percent}%`, Font.systemFont(10), Color.white()).centerAlignText()
   } else {
     addText(w, "✳ Claude", Font.semiboldSystemFont(12), Color.white())
-    addText(w, `Session ${u.session.percent}% · ${fmtReset(u.session.reset, false)}`, Font.systemFont(12), Color.white())
-    addText(w, `Weekly ${u.weekly.percent}% · ${fmtReset(u.weekly.reset, true)}`, Font.systemFont(12), Color.white())
+    addText(w, `Session ${u.session.percent}%${u.session.reset ? ` · ${fmtReset(u.session.reset, false)}` : ""}`, Font.systemFont(12), Color.white())
+    addText(w, `Weekly ${u.weekly.percent}%${u.weekly.reset ? ` · ${fmtReset(u.weekly.reset, true)}` : ""}`, Font.systemFont(12), Color.white())
     if (u.fetchedAt) addText(w, `${isStale(u.fetchedAt) ? "⚠ " : ""}Updated ${fmtUpdated(u.fetchedAt)}`, Font.systemFont(10), Color.white())
   }
   return w

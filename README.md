@@ -16,5 +16,5 @@ An iOS [Scriptable](https://scriptable.app) widget that shows your Claude sessio
 - Bars turn amber at 70% and red at 90%
 - Remembers the last reading on-device, so it never goes blank if iCloud or the Mac is offline
 - Static "Updated 3:45 PM" label, with an amber warning if data is over 30 minutes old
-- Flags outdated percentages once a reset time has passed
+- Shows 0% once a reset time has passed, until fresh data arrives
 - Tap to open claude.ai usage settings
