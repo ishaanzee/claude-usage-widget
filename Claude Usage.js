@@ -169,7 +169,7 @@ function homeWidget(u, family) {
 
   w.setPadding(14, 16, 12, 16)
   const head = w.addStack()
-  addText(head, "✳ Claude", Font.semiboldSystemFont(12), ACCENT)
+  addText(head, "✻ Claude", Font.semiboldSystemFont(12), ACCENT)
   w.addSpacer(6)
   const cols = w.addStack()
   block(cols, "Session (5h)", u.session, false)
@@ -188,12 +188,12 @@ function lockWidget(u, family) {
   const w = new ListWidget()
   w.url = "https://claude.ai/settings/usage"
   if (family === "accessoryInline") {
-    addText(w, `✳ ${u.session.percent}% · ${u.weekly.percent}%`, Font.systemFont(12), Color.white())
+    addText(w, `✻ ${u.session.percent}% · ${u.weekly.percent}%`, Font.systemFont(12), Color.white())
   } else if (family === "accessoryCircular") {
     addText(w, `${u.session.percent}%`, Font.boldRoundedSystemFont(18), Color.white()).centerAlignText()
     addText(w, `wk ${u.weekly.percent}%`, Font.systemFont(10), Color.white()).centerAlignText()
   } else {
-    addText(w, "✳ Claude", Font.semiboldSystemFont(12), Color.white())
+    addText(w, "✻ Claude", Font.semiboldSystemFont(12), Color.white())
     addText(w, `Session ${u.session.percent}%${u.session.reset ? ` · ${fmtReset(u.session.reset, false)}` : ""}`, Font.systemFont(12), Color.white())
     addText(w, `Weekly ${u.weekly.percent}%${u.weekly.reset ? ` · ${fmtReset(u.weekly.reset, true)}` : ""}`, Font.systemFont(12), Color.white())
     if (u.fetchedAt) addText(w, `${isStale(u.fetchedAt) ? "⚠ " : ""}Updated ${fmtUpdated(u.fetchedAt)}`, Font.systemFont(10), Color.white())
@@ -204,7 +204,7 @@ function lockWidget(u, family) {
 function errorWidget(msg) {
   const w = new ListWidget()
   w.backgroundColor = BG
-  addText(w, "✳ Claude", Font.semiboldSystemFont(12), ACCENT)
+  addText(w, "✻ Claude", Font.semiboldSystemFont(12), ACCENT)
   w.addSpacer(4)
   const t = w.addText(msg)
   t.font = Font.systemFont(11)
