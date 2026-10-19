@@ -248,6 +248,7 @@ function lockWidget(u, family) {
 function errorWidget(msg) {
   const w = new ListWidget()
   w.backgroundColor = BG
+  w.url = "https://claude.ai/settings/usage"
   addText(w, "✻ Claude", Font.semiboldSystemFont(12), ACCENT)
   w.addSpacer(4)
   const t = w.addText(msg)
