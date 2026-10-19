@@ -1,15 +1,19 @@
 // Claude Usage — Scriptable widget
 //
-// Reads claude-usage.json, which the SwiftBar plugin on the Mac
+// Fetches usage directly from the phone with your Claude Code login token (kept in the Keychain).
+// If that fails, it falls back to claude-usage.json, which the SwiftBar plugin on the Mac
 // (~/.swiftbar/claude-usage.5m.sh) writes into iCloud Drive/Claude Usage every 5 minutes.
-// Setup: Scriptable Settings → File Bookmarks → + → Pick Folder → iCloud Drive/Claude Usage,
+// Setup: run the token command below on your Mac and paste the result when Scriptable asks.
+// Optional iCloud fallback: Scriptable Settings → File Bookmarks → + → Pick Folder → iCloud Drive/Claude Usage,
 // and name the bookmark "Claude Usage".
 // Supports small and medium home-screen widgets plus lock-screen widgets.
-// The last good reading is cached on the phone, so the widget still shows data when iCloud or the Mac is unavailable.
+// The last good reading is cached on the phone, so the widget still shows data when the network, iCloud or the Mac is unavailable.
 
 const FILE = "claude-usage.json"
 const CACHE_FILE = "claude-usage-cache.json"
 const BOOKMARK = "Claude Usage"
+const TOKEN_KEY = "claude-oauth-token"
+const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 const STALE_MIN = 30
 
 const ACCENT = new Color("#d97757")
@@ -23,11 +27,37 @@ const TRACK = new Color("#8e8e93", 0.3)
 const colorFor = p => (p >= 90 ? RED : p >= 70 ? AMBER : ACCENT)
 const pctColor = p => (p >= 70 ? colorFor(p) : FG)
 
-// Returns the freshest data available: iCloud file first, then the on-device cache.
+// Same endpoint /usage uses. The token is a Claude Code login token; this script never refreshes it.
+async function fetchLive() {
+  if (!Keychain.contains(TOKEN_KEY)) return null
+  const req = new Request(USAGE_URL)
+  req.headers = {
+    Authorization: `Bearer ${Keychain.get(TOKEN_KEY)}`,
+    "anthropic-beta": "oauth-2025-04-20",
+    "User-Agent": "claude-code-scriptable",
+  }
+  req.timeoutInterval = 15
+  const data = await req.loadJSON()
+  const code = req.response.statusCode
+  if (code === 401) throw new Error("login token expired. Run the token command on your Mac and paste it again.")
+  if (code !== 200) throw new Error(`usage request failed (HTTP ${code})`)
+  return { ...data, fetched_at: new Date().toISOString() }
+}
+
+// Returns the freshest data available: live fetch first, then the iCloud file, then the on-device cache.
 async function load() {
   const local = FileManager.local()
   const cachePath = local.joinPath(local.documentsDirectory(), CACHE_FILE)
   let err = null
+  try {
+    const live = await fetchLive()
+    if (live) {
+      local.writeString(cachePath, JSON.stringify(live))
+      return live
+    }
+  } catch (e) {
+    err = e
+  }
   try {
     const fm = FileManager.iCloud()
     if (!fm.bookmarkExists(BOOKMARK)) throw new Error(`Add a file bookmark named "${BOOKMARK}" in Scriptable settings.`)
@@ -40,11 +70,25 @@ async function load() {
       return data
     }
   } catch (e) {
-    err = e
+    err = err || e
   }
   if (local.fileExists(cachePath)) return JSON.parse(local.readString(cachePath))
   if (err) throw err
   return null
+}
+
+// First run in the app: ask for the token once and keep it in the Keychain.
+async function askForToken() {
+  const a = new Alert()
+  a.title = "Claude login token"
+  a.message = 'On your Mac, run:\nsecurity find-generic-password -s "Claude Code-credentials" -w | /usr/bin/jq -r .claudeAiOauth.accessToken\nThen paste the output here.'
+  a.addSecureTextField("Token")
+  a.addAction("Save")
+  a.addCancelAction("Skip")
+  if ((await a.present()) === 0) {
+    const value = a.textFieldValue(0).trim()
+    if (value) Keychain.set(TOKEN_KEY, value)
+  }
 }
 
 // Once a reset time has passed, the old percent no longer applies, so show 0% until the next update
@@ -213,12 +257,13 @@ function errorWidget(msg) {
 }
 
 const family = config.widgetFamily || "medium"
+if (config.runsInApp && !Keychain.contains(TOKEN_KEY)) await askForToken()
 let widget
 try {
   const data = await load()
   widget = data
     ? (family.startsWith("accessory") ? lockWidget : homeWidget)(parse(data), family)
-    : errorWidget("No usage data yet. Make sure SwiftBar is running on your Mac. Once it has run once, the last reading is remembered.")
+    : errorWidget("No usage data yet. Add your login token in the Scriptable app, or make sure SwiftBar is running on your Mac.")
 } catch (e) {
   widget = errorWidget(`Couldn't read usage: ${e.message}`)
 }
