@@ -57,13 +57,15 @@ const norm = l => {
 function parse(data) {
   const ls = data.limits || []
   const pick = kind => ls.find(l => l.kind === kind)
-  const session = pick("session") || { percent: data.five_hour?.utilization, resets_at: data.five_hour?.resets_at }
   const weekly = pick("weekly_all") || { percent: data.seven_day?.utilization, resets_at: data.seven_day?.resets_at }
-  const scoped = ls
-    .filter(l => l.kind === "weekly_scoped" && l.scope?.model?.display_name)
+  const scopedAll = ls.filter(l => l.kind === "weekly_scoped" && l.scope?.model?.display_name)
+  const fable = scopedAll.find(l => l.scope.model.display_name === "Fable") || {}
+  // Any other per-model limits go in the medium widget's footer
+  const scoped = scopedAll
+    .filter(l => l !== fable)
     .map(l => `${l.scope.model.display_name} ${norm(l).percent}%`)
   return {
-    session: norm(session),
+    fable: norm(fable),
     weekly: norm(weekly),
     scoped,
     fetchedAt: data.fetched_at ? new Date(data.fetched_at) : null,
@@ -159,9 +161,9 @@ function homeWidget(u, family) {
 
   if (family === "small") {
     w.setPadding(14, 14, 12, 14)
-    row(w, "Session", u.session, false)
-    w.addSpacer()
     row(w, "Weekly", u.weekly, true)
+    w.addSpacer()
+    row(w, "Fable", u.fable, true)
     w.addSpacer()
     addUpdated(w, u.fetchedAt)
     return w
@@ -172,9 +174,9 @@ function homeWidget(u, family) {
   addText(head, "✻ Claude", Font.semiboldSystemFont(12), ACCENT)
   w.addSpacer(6)
   const cols = w.addStack()
-  block(cols, "Session (5h)", u.session, false)
-  cols.addSpacer()
   block(cols, "Weekly", u.weekly, true)
+  cols.addSpacer()
+  block(cols, "Fable (weekly)", u.fable, true)
   w.addSpacer()
   const foot = w.addStack()
   foot.centerAlignContent()
@@ -188,14 +190,14 @@ function lockWidget(u, family) {
   const w = new ListWidget()
   w.url = "https://claude.ai/settings/usage"
   if (family === "accessoryInline") {
-    addText(w, `✻ ${u.session.percent}% · ${u.weekly.percent}%`, Font.systemFont(12), Color.white())
+    addText(w, `✻ ${u.weekly.percent}% · Fable ${u.fable.percent}%`, Font.systemFont(12), Color.white())
   } else if (family === "accessoryCircular") {
-    addText(w, `${u.session.percent}%`, Font.boldRoundedSystemFont(18), Color.white()).centerAlignText()
-    addText(w, `wk ${u.weekly.percent}%`, Font.systemFont(10), Color.white()).centerAlignText()
+    addText(w, `${u.weekly.percent}%`, Font.boldRoundedSystemFont(18), Color.white()).centerAlignText()
+    addText(w, `F ${u.fable.percent}%`, Font.systemFont(10), Color.white()).centerAlignText()
   } else {
     addText(w, "✻ Claude", Font.semiboldSystemFont(12), Color.white())
-    addText(w, `Session ${u.session.percent}%${u.session.reset ? ` · ${fmtReset(u.session.reset, false)}` : ""}`, Font.systemFont(12), Color.white())
     addText(w, `Weekly ${u.weekly.percent}%${u.weekly.reset ? ` · ${fmtReset(u.weekly.reset, true)}` : ""}`, Font.systemFont(12), Color.white())
+    addText(w, `Fable ${u.fable.percent}%${u.fable.reset ? ` · ${fmtReset(u.fable.reset, true)}` : ""}`, Font.systemFont(12), Color.white())
     if (u.fetchedAt) addText(w, `${isStale(u.fetchedAt) ? "⚠ " : ""}Updated ${fmtUpdated(u.fetchedAt)}`, Font.systemFont(10), Color.white())
   }
   return w

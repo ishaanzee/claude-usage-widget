@@ -1,6 +1,6 @@
 # Claude Usage Widget
 
-An iOS [Scriptable](https://scriptable.app) widget that shows your Claude session (5h) and weekly usage limits on your home or lock screen.
+An iOS [Scriptable](https://scriptable.app) widget that shows your Claude weekly and Fable weekly usage limits on your home or lock screen.
 
 ## Screenshots
 | Small | Medium | Lock screen |
