@@ -59,17 +59,30 @@ function parse(data) {
   const pick = kind => ls.find(l => l.kind === kind)
   const weekly = pick("weekly_all") || { percent: data.seven_day?.utilization, resets_at: data.seven_day?.resets_at }
   const scopedAll = ls.filter(l => l.kind === "weekly_scoped" && l.scope?.model?.display_name)
-  const fable = scopedAll.find(l => l.scope.model.display_name === "Fable") || {}
-  // Any other per-model limits go in the medium widget's footer
-  const scoped = scopedAll
-    .filter(l => l !== fable)
-    .map(l => `${l.scope.model.display_name} ${norm(l).percent}%`)
+  // The first per-model limit (currently Fable) gets its own slot, labelled with whatever the API calls it
+  const first = scopedAll[0]
+  const model = first ? { name: first.scope.model.display_name, ...norm(first) } : null
+  // Any further per-model limits go in the medium widget's footer
+  const scoped = scopedAll.slice(1).map(l => `${l.scope.model.display_name} ${norm(l).percent}%`)
+  // Per-model cap as a share of the weekly allowance (Fable: 50%)
+  const share = (data.weekly_scoped_shares || []).find(sh => ls[sh.limit_index] === first)
+  const weeklyReset = weekly.resets_at ? new Date(weekly.resets_at) : null
   return {
-    fable: norm(fable),
+    model,
+    cap: share ? share.allowance_percent_of_weekly : null,
+    pace: pace(weeklyReset),
     weekly: norm(weekly),
     scoped,
     fetchedAt: data.fetched_at ? new Date(data.fetched_at) : null,
   }
+}
+
+// Percent of the 7-day window that has passed, or null when unknown
+function pace(reset) {
+  if (!reset) return null
+  const left = reset.getTime() - Date.now()
+  if (left <= 0) return null
+  return Math.max(0, Math.min(100, Math.round(100 - (left / (7 * 864e5)) * 100)))
 }
 
 function fmtReset(d, withDay) {
@@ -80,6 +93,10 @@ function fmtReset(d, withDay) {
 
 const resetText = (lim, withDay) => (lim.reset ? `resets ${fmtReset(lim.reset, withDay)}` : " ")
 
+// "67% of week · under pace"
+const paceText = u =>
+  u.pace == null ? null : `${u.pace}% of week · ${u.weekly.percent > u.pace ? "over" : "under"} pace`
+
 const isStale = at => !at || Date.now() - at.getTime() > STALE_MIN * 60e3
 
 function fmtUpdated(at) {
@@ -87,7 +104,7 @@ function fmtUpdated(at) {
   return at.toDateString() === new Date().toDateString() ? t : `${at.toLocaleDateString([], { weekday: "short" })} ${t}`
 }
 
-function bar(p, w, h) {
+function bar(p, w, h, mark) {
   const dc = new DrawContext()
   dc.size = new Size(w, h)
   dc.opaque = false
@@ -105,6 +122,15 @@ function bar(p, w, h) {
     dc.setFillColor(colorFor(p))
     dc.fillPath()
   }
+  // Pace tick: where usage would be if spread evenly over the week
+  if (mark != null) {
+    const x = Math.min(w - 2, Math.max(0, (w * mark) / 100 - 1))
+    const tick = new Path()
+    tick.addRect(new Rect(x, 0, 2, h))
+    dc.addPath(tick)
+    dc.setFillColor(FG)
+    dc.fillPath()
+  }
   return dc.getImage()
 }
 
@@ -117,8 +143,8 @@ function addText(parent, str, font, color) {
   return t
 }
 
-function addBar(parent, p, w) {
-  const img = parent.addImage(bar(p, w, 6))
+function addBar(parent, p, w, mark) {
+  const img = parent.addImage(bar(p, w, 6, mark))
   img.imageSize = new Size(w, 6)
 }
 
@@ -130,26 +156,26 @@ function addUpdated(parent, at) {
 }
 
 // Big-number block for the medium widget
-function block(parent, label, lim, withDay) {
+function block(parent, label, lim, withDay, mark) {
   const s = parent.addStack()
   s.layoutVertically()
   addText(s, label, Font.mediumSystemFont(12), DIM)
   addText(s, `${lim.percent}%`, Font.boldRoundedSystemFont(30), pctColor(lim.percent))
   s.addSpacer(4)
-  addBar(s, lim.percent, 130)
+  addBar(s, lim.percent, 130, mark)
   s.addSpacer(4)
   addText(s, resetText(lim, withDay), Font.systemFont(10), DIM)
 }
 
 // Compact row for the small widget
-function row(parent, label, lim, withDay) {
+function row(parent, label, lim, withDay, mark) {
   const head = parent.addStack()
   head.centerAlignContent()
   addText(head, label, Font.mediumSystemFont(12), DIM)
   head.addSpacer()
   addText(head, `${lim.percent}%`, Font.boldRoundedSystemFont(20), pctColor(lim.percent))
   parent.addSpacer(2)
-  addBar(parent, lim.percent, 125)
+  addBar(parent, lim.percent, 125, mark)
   parent.addSpacer(2)
   addText(parent, resetText(lim, withDay), Font.systemFont(9), DIM)
 }
@@ -161,9 +187,10 @@ function homeWidget(u, family) {
 
   if (family === "small") {
     w.setPadding(14, 14, 12, 14)
-    row(w, "Weekly", u.weekly, true)
+    row(w, "Weekly", u.weekly, true, u.pace)
     w.addSpacer()
-    row(w, "Fable", u.fable, true)
+    if (u.model) row(w, u.model.name, u.model, true, u.pace)
+    else addText(w, paceText(u), Font.systemFont(10), DIM)
     w.addSpacer()
     addUpdated(w, u.fetchedAt)
     return w
@@ -174,13 +201,14 @@ function homeWidget(u, family) {
   addText(head, "✻ Claude", Font.semiboldSystemFont(12), ACCENT)
   w.addSpacer(6)
   const cols = w.addStack()
-  block(cols, "Weekly", u.weekly, true)
+  block(cols, "Weekly", u.weekly, true, u.pace)
   cols.addSpacer()
-  block(cols, "Fable (weekly)", u.fable, true)
+  if (u.model) block(cols, u.cap != null ? `${u.model.name} (≤${u.cap}% of wk)` : `${u.model.name} (weekly)`, u.model, true, u.pace)
   w.addSpacer()
   const foot = w.addStack()
   foot.centerAlignContent()
-  if (u.scoped.length) addText(foot, u.scoped.join(" · "), Font.systemFont(10), DIM)
+  const notes = [paceText(u), ...u.scoped].filter(Boolean)
+  if (notes.length) addText(foot, notes.join(" · "), Font.systemFont(10), DIM)
   foot.addSpacer()
   addUpdated(foot, u.fetchedAt)
   return w
@@ -190,14 +218,15 @@ function lockWidget(u, family) {
   const w = new ListWidget()
   w.url = "https://claude.ai/settings/usage"
   if (family === "accessoryInline") {
-    addText(w, `✻ ${u.weekly.percent}% · Fable ${u.fable.percent}%`, Font.systemFont(12), Color.white())
+    addText(w, `✻ ${u.weekly.percent}%${u.model ? ` · ${u.model.name} ${u.model.percent}%` : ""}`, Font.systemFont(12), Color.white())
   } else if (family === "accessoryCircular") {
     addText(w, `${u.weekly.percent}%`, Font.boldRoundedSystemFont(18), Color.white()).centerAlignText()
-    addText(w, `F ${u.fable.percent}%`, Font.systemFont(10), Color.white()).centerAlignText()
+    addText(w, u.model ? `${u.model.name.slice(0, 1)} ${u.model.percent}%` : `wk ${u.pace ?? "–"}%`, Font.systemFont(10), Color.white()).centerAlignText()
   } else {
     addText(w, "✻ Claude", Font.semiboldSystemFont(12), Color.white())
     addText(w, `Weekly ${u.weekly.percent}%${u.weekly.reset ? ` · ${fmtReset(u.weekly.reset, true)}` : ""}`, Font.systemFont(12), Color.white())
-    addText(w, `Fable ${u.fable.percent}%${u.fable.reset ? ` · ${fmtReset(u.fable.reset, true)}` : ""}`, Font.systemFont(12), Color.white())
+    if (u.model) addText(w, `${u.model.name} ${u.model.percent}%`, Font.systemFont(12), Color.white())
+    if (u.pace != null) addText(w, paceText(u), Font.systemFont(10), Color.white())
     if (u.fetchedAt) addText(w, `${isStale(u.fetchedAt) ? "⚠ " : ""}Updated ${fmtUpdated(u.fetchedAt)}`, Font.systemFont(10), Color.white())
   }
   return w

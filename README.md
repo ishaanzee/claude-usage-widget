@@ -1,6 +1,6 @@
 # Claude Usage Widget
 
-An iOS [Scriptable](https://scriptable.app) widget that shows your Claude weekly and Fable weekly usage limits on your home or lock screen.
+An iOS [Scriptable](https://scriptable.app) widget that shows your Claude weekly usage limit and per-model weekly limits (currently Fable) on your home or lock screen.
 
 ## Screenshots
 | Small | Medium | Lock screen |
@@ -21,7 +21,7 @@ The script removes any login token that an earlier version stored in the phone's
 
 ## Features
 - Small, medium, and lock-screen (inline, circular, rectangular) sizes
-- Bars turn amber at 70% and red at 90%
+- Bars turn amber at 70% and red at 90%, with a tick showing how far through the week you are (over/under pace)
 - Remembers the last reading on-device, so it never goes blank if iCloud or the Mac is offline
 - Static "Updated 3:45 PM" label, with an amber warning if data is over 30 minutes old
 - Shows 0% once a reset time has passed, until fresh data arrives
